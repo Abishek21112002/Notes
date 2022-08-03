@@ -1,32 +1,45 @@
 package com.abi21shek.notes
 
+import android.content.Context
 import android.os.Bundle
 import android.util.Log
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.EditText
+import android.view.*
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProviders
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.util.*
+import javax.security.auth.callback.Callback
 
-private const val TAG = "NoteListFragment"
+private const val TAG = "Notes Got"
 
 class NoteListFragment: Fragment() {
 
+    interface Callbacks {
+        fun onNoteSelected(noteId: UUID)
+    }
+
+    private var callbacks: Callbacks? = null
+
     private lateinit var noteRecyclerView: RecyclerView
-    private var adapter: NoteAdapter? = null
+    private var adapter: NoteAdapter? = NoteAdapter(emptyList())
 
     private val noteListViewModel: NoteListViewModel by lazy {
         ViewModelProviders.of(this).get(NoteListViewModel::class.java)
     }
 
+    override fun onAttach(context: Context) {
+        super.onAttach(context)
+        callbacks = context as Callbacks?
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "Total Notes: ${noteListViewModel.notes.size}")
+        setHasOptionsMenu(true)
     }
 
     override fun onCreateView(
@@ -38,24 +51,50 @@ class NoteListFragment: Fragment() {
 
         noteRecyclerView = view.findViewById(R.id.note_recycler_view) as RecyclerView
         noteRecyclerView.layoutManager = LinearLayoutManager(context)
+        noteRecyclerView.adapter = adapter
 
-        updateUI()
 
         return view
     }
 
-    private fun updateUI(){
-        val notes = noteListViewModel.notes
-        adapter = NoteAdapter(notes)
-        noteRecyclerView.adapter = adapter
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        noteListViewModel.noteListLiveData.observe(viewLifecycleOwner, Observer {
+            notes -> notes?.let {
+                Log.i(TAG, "Got Notes ${notes.size}")
+            updateUI(notes)
+        }
+        })
     }
+
+    override fun onDetach() {
+        super.onDetach()
+        callbacks = null
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
+        super.onCreateOptionsMenu(menu, inflater)
+        inflater.inflate(R.menu.fragment_note_list, menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when(item.itemId) {
+            R.id.new_note -> {
+                val note = Note()
+                noteListViewModel.addNote(note)
+                callbacks?.onNoteSelected(note.id)
+                true
+            }
+            else -> return super.onOptionsItemSelected(item)
+        }
+    }
+
 
     private inner class NoteHolder(view: View): RecyclerView.ViewHolder(view), View.OnClickListener{
 
         private lateinit var note: Note
 
         private val noteTitle: TextView = itemView.findViewById(R.id.note_item_title)
-        private val noteDetails: TextView = itemView.findViewById(R.id.note_item_details)
 
         init {
             itemView.setOnClickListener(this)
@@ -64,11 +103,10 @@ class NoteListFragment: Fragment() {
         fun bind(note: Note){
             this.note = note
             noteTitle.text = note.title
-            noteDetails.text = note.notes
         }
 
         override fun onClick(v: View){
-            Toast.makeText(context, "${note.title} pressed!", Toast.LENGTH_SHORT).show()
+            callbacks?.onNoteSelected(note.id)
         }
     }
 
@@ -87,6 +125,10 @@ class NoteListFragment: Fragment() {
 
     }
 
+    private fun updateUI(notes: List<Note>){
+        adapter = NoteAdapter(notes)
+        noteRecyclerView.adapter = adapter
+    }
 
     companion object{
         fun newInstance(): NoteListFragment{
